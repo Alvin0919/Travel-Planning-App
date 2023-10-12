@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+{% load static %}
+<html>
+<head>
+    <script src="{% static 'js/pocketAdd/sb-admin-25.js' %}"></script>
+    <title>路線規劃</title>
+    <style>
+        #map {
+            width: 900px;
+            height: 1080px;
+        }
+    </style>
+</head>
+<body onload="loadMapAPI()">
+
+
+    出發地: <input type="text" id="start" placeholder="起點">
+    目的地: <input type="text" id="end" placeholder="終點">
+    <button onclick="planRoute('DRIVING')">規劃路線</button>
+    <button onclick="planRoute('WALKING')">步行</button>
+    <button onclick="planRoute('DRIVING')">開車</button>
+    <button onclick="planRoute('TRANSIT')">大眾交通工具</button>
+
+    <div id="map"></div>
+
+    <script>
+        var map;
+        var directionsService;
+        var directionsRenderer;
+
+        function initMap() {
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 7,
+                center: {lat: 24.9886, lng: 121.5754}  // 台灣的中心點
+            });
+            directionsRenderer.setMap(map);
+        }
+
+        function planRoute(mode = 'DRIVING') {
+            var start = document.getElementById('start').value;
+            var end = document.getElementById('end').value;
+
+            // 使用 AJAX 請求後端
+            fetch(`/get_directions_view?start=${start}&end=${end}&mode=${mode}`)
+            .then(response => response.json())
+            .then(data => {
+                // 使用 data 更新地圖
+                var path = data.path.map(function(point) {
+                    return new google.maps.LatLng(point.lat, point.lng);
+                });
+
+                var route = new google.maps.Polyline({
+                    path: path,
+                    geodesic: true,
+                    strokeColor: '#FF0000',
+                    strokeOpacity: 1.0,
+                    strokeWeight: 2
+                });
+
+                route.setMap(map);
+            });
+        }
+    </script>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDzpYVlDrGTPA1UVRVUkr5e8_V82IvnsYY&callback=initMap" async defer></script>
+</body>
+</html>
