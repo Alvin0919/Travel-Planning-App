@@ -1,0 +1,198 @@
+from django.utils.translation import gettext as _
+from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import redirect,render
+from pocketAdd.lib_db import dbfunc
+from pocketAdd.lib_common import comlib
+from django.http import JsonResponse,HttpResponse
+from django.template import loader
+from django.urls import reverse
+from django.utils.translation import gettext as _
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
+from pocketAdd.models import *
+from django.shortcuts import render
+import requests
+from django.shortcuts import redirect
+# Create your views here.
+@csrf_exempt
+
+
+def index(request):
+    return render(request,'index.html')
+
+def addUser(request):
+    # isLogin = comlib.checkIsExpire(request)
+    #if not isLogin:
+    #    return JsonResponse({"status": "failed"}, safe=False)
+    if request.method == 'POST':
+        actid = request.session['user_id']
+        u_id = request.POST.get('u_id')
+        u_name = request.POST.get('u_name')
+        u_password = request.POST.get('u_password')
+        u_display_name = request.POST.get('u_display_name')
+        u_start_time = request.POST.get('u_start_time')
+        u_end_time = request.POST.get('u_end_time')
+        user = dbfunc.addUser(actid, u_name,
+                                u_password, u_display_name, u_start_time, u_end_time)
+        user = user.as_dict()
+        return JsonResponse(user, safe=False)
+    
+def index(request):
+    if request.method == 'POST':
+        comlib.login(request)
+    isLogin = comlib.checkIsExpire(request)
+    if isLogin:
+        return redirect(reverse('index'))
+    else:
+        resp = render(request, 'login.html')
+        return resp
+
+# 導入API金鑰，注意將金鑰直接放在代碼中可能存在安全風險，最好使用環境變量或其他方法來存放。
+API_KEY = "..."
+
+# 定義一個函式，使用Google Maps Geocoding API來取得一個地址的經緯度
+def get_geocode(address):
+    # 格式化API的URL，將地址和API金鑰加入URL中
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={address}&key={API_KEY}"
+    # 發送GET請求到API
+    response = requests.get(url)
+    # 解析API返回的JSON數據
+    data = response.json()
+    # 從數據中提取地理位置資訊
+    location = data['results'][0]['geometry']['location']
+    # 返回地理位置
+    return location
+
+# 定義一個函式，使用Google Maps Directions API獲取從起始地址到目的地的導航信息
+def get_directions(start_address, end_address, mode="driving"):
+    # 獲取起始和終點地址的經緯度
+    start_location = get_geocode(start_address)
+    end_location = get_geocode(end_address)
+    # 格式化API的URL，加入起始和終點的經緯度、交通模式和API密鑰
+    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={start_location['lat']},{start_location['lng']}&destination={end_location['lat']},{end_location['lng']}&mode={mode}&alternatives=true&key={API_KEY}"
+
+    # 發送GET請求到API
+    response = requests.get(url)
+    # 解析API返回的JSON數據
+    data = response.json()
+
+    # 初始化一個空列表來存放所有的路線信息
+    all_routes_info = []
+
+    # 遍歷返回的每條路線
+    for route in data['routes']:
+        legs = route['legs'][0]
+        # 提取路線的距離和估計時間
+        distance = legs['distance']['text']
+        duration = legs['duration']['text']
+        transit_info = []
+
+        # 如果交通模式是公共交通，則提取交通工具的信息
+        if mode == "transit":
+            for step in legs['steps']:
+                if 'transit_details' in step:
+                    vehicle_type = step['transit_details']['line']['vehicle']['type']
+                    transit_info.append(vehicle_type)
+
+        # 將該路線的信息加入到列表中
+        all_routes_info.append((distance, duration, transit_info))
+
+    # 返回所有路線的信息
+    return all_routes_info
+
+# 根據請求返回路線信息的JSON格式的函式
+def get_directions_view(request):
+    # 定義一個名為 get_directions_view 的視圖函數，它接收一個 request 對象作為參數。
+    # 此 request 對象包含了用戶發送到伺服器的所有 HTTP 請求信息。
+
+    # 從GET請求中獲取參數
+    start_address = request.GET.get('start')
+    end_address = request.GET.get('end')
+    mode = request.GET.get('mode', 'driving')  # 預設為 "driving"
+    # 使用 request.GET.get() 方法從請求的 URL 查詢參數中提取所需的資訊。
+    # 如果某個參數不存在，則會使用提供的默認值（例如 mode 的默認值是 "driving"）。
+
+    # 調用前面的函數獲取路線信息
+    all_routes_info = get_directions(start_address, end_address, mode)
+    # 使用之前定義的 get_directions 函數獲取起點和終點之間的路線信息。
+
+    # 如果需要，可以在這裡進一步處理all_routes_info
+    # 這是一個佔位註解，暗示開發者可以根據需要在這裡加入其他程式碼進一步處理返回的路線信息。
+
+    # 返回路線信息的JSON格式
+    return JsonResponse(all_routes_info, safe=False)
+    # 使用 Django 的 JsonResponse 函數將 all_routes_info 轉換為 JSON 格式並返回給用戶。
+    # safe 參數設為 False 是因為 all_routes_info 是一個列表，而不是字典。對於非字典數據，需要將 safe 設為 False。
+
+# 顯示從一個地址到另一個地址的路線信息的函式
+def show_directions(request):
+    # 獲取用戶輸入的起始和目的地
+    start_address = input("請輸入出發地點: ")
+    end_address = input("請輸入目的地: ")
+
+    # 定義交通模式和其對應的描述
+    mode_map = {
+        "driving": "開車",
+        "walking": "步行",
+        "bicycling": "騎車",
+        "transit": "大眾交通工具"
+    }
+
+    # 定義交通工具類型與其對應的描述
+    transit_map = {
+        "BUS": "公車",
+        "SUBWAY": "捷運",
+        "TRAIN": "火車",
+        "LONG_DISTANCE_TRAIN": "火車",
+        "TRAM": "電車",
+        "FERRY": "渡輪",
+        "CABLE_CAR": "纜車",
+        "HIGH_SPEED_TRAIN": "高鐵"
+        # ... 可繼續加入其他交通工具類型
+    }
+
+    results = []
+
+    # 遍歷所有的交通模式
+    for mode, desc in mode_map.items():
+        # 獲取該交通模式的路線信息
+        all_routes_info = get_directions(start_address, end_address, mode)
+        if mode == "transit":
+            results.append(f"Total routes returned for transit mode: {len(all_routes_info)}")
+
+            # 只取前三條最快路線
+            for i, (distance, duration, transit_info) in enumerate(all_routes_info):
+                if i >= 3:
+                    break
+                # 翻譯交通工具類型為其對應的描述
+                transit_modes = [transit_map.get(item, item) for item in transit_info]
+                transit_str = " -> ".join(transit_modes)
+                # 格式化路線的描述並加入到結果中
+                results.append(f"以{desc}方式 ({transit_str})，從 {start_address} 到 {end_address} 的距離是 {distance}，大約需要 {duration}。")
+        else:
+            distance, duration, _ = all_routes_info[0]
+            # 格式化路線的描述並加入到結果中
+            results.append(f"以{desc}方式，從 {start_address} 到 {end_address} 的距離是 {distance}，大約需要 {duration}。")
+
+
+
+
+#def index(request):
+ #   my_var = "Hello, world!"
+  #  context = {
+   #     'my_variable': my_var
+    #}
+    #return render(request, 'base/index.html', context)
+
+def plan_route(request):
+    return render(request, 'plan_route.html')
+
+
+
+def login_view(request):
+    # ... 登入邏輯 ...
+    if user_authenticated:  # 替換為您的登錄成功條件
+        return redirect('http://127.0.0.1:443/')  # 'route_planner'應該是您的路由名稱
+
+def route_planner_view(request):
+    return render(request, 'pocketAdd/route_planner.html')
